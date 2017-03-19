@@ -176,15 +176,10 @@ protected:
     /* Halves every counter and adjusts $m_size. */
     void reset() noexcept // TODO verify noexcept claim
     {
-        //int popcount = 0;
         for(auto& counter : m_table)
         {
-            //popcount  += detail::get_popcount(counter & 0x1111111111111111L);
-            //counter = (counter >> 1) & 0x77'77'77'77'77'77'77'77L;
             halve(counter);
         }
-        //m_size = (m_size >> 1) - (popcount >> 2);
-        //m_size = (m_size / 2) - (popcount / 4);
         m_size /= 2;
     }
 

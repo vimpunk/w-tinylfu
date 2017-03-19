@@ -1,7 +1,7 @@
 #ifndef WTINYLFU_HEADER
 #define WTINYLFU_HEADER
 
-#include "utils.h"
+#include "detail.h"
 #include "frequency_sketch.h"
 
 #include <map>
@@ -324,7 +324,7 @@ template<
 
     FrequencySketch<K> m_filter;
     // Maps keys to page positions of the LRU caches pointing to a page.
-    PageMap            m_page_pos_map;
+    PageMap            m_page_map;
     // Allocated 1% of the total capacity. Window victims are granted to chance to
     // reenter the cache (into $m_main). This is to remediate the problem where sparse
     // bursts cause repeated misses in the regular TinyLfu architecture.
@@ -357,7 +357,7 @@ public:
 
     bool has(const K& key) const noexcept
     {
-        return is_in_cache(m_page_pos_map.find(key));
+        return is_in_cache(m_page_map.find(key));
     }
 
     /* NOTE: after this operation the accuracy of the cache will suffer until enough
@@ -390,7 +390,7 @@ public:
     std::shared_ptr<V> get(const K& key)
     {
         m_filter.record_access(key);
-        auto it = m_page_pos_map.find(key);
+        auto it = m_page_map.find(key);
         if(is_in_cache(it))
         {
             auto page = it->second;
@@ -438,7 +438,7 @@ private:
 
     bool is_in_cache(typename PageMap::const_iterator it) const noexcept
     {
-        return it != m_page_pos_map.cend();
+        return it != m_page_map.cend();
     }
 
 
@@ -449,14 +449,14 @@ private:
             evict();
         }
 
-        if(is_in_cache(m_page_pos_map.find(key)))
+        if(is_in_cache(m_page_map.find(key)))
         {
             // TODO think about whether this is the appropriate reaction. maybe data
             // should just be overwritten? or just return without overwriting or throwing?
             throw std::invalid_argument("key already in cache");
         }
 
-        m_page_pos_map.emplace(key, m_window.insert(key, CacheType::WINDOW, data));
+        m_page_map.emplace(key, m_window.insert(key, CacheType::WINDOW, data));
     }
 
 
@@ -515,14 +515,14 @@ private:
 
     void evict_from_main()
     {
-        m_page_pos_map.erase(m_main.get_victim_pos()->key);
+        m_page_map.erase(m_main.get_victim_pos()->key);
         m_main.evict();
     }
 
 
     void evict_from_window()
     {
-        m_page_pos_map.erase(m_window.get_lru_pos()->key);
+        m_page_map.erase(m_window.get_lru_pos()->key);
         m_window.evict();
     }
 };

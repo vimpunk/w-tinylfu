@@ -1,7 +1,7 @@
 #ifndef FREQUENCY_SKETCH_HEADER
 #define FREQUENCY_SKETCH_HEADER
 
-#include "utils.h"
+#include "detail.h"
 
 #include <vector>
 #include <cmath>
@@ -9,11 +9,7 @@
 
 
 //-------------------------------------------------------------------------------------//
-template<
-    typename T
-> class FrequencySketch
-//-------------------------------------------------------------------------------------//
-// A probabilistic set for estimating the popularity (frequency) of an element within a
+// A probabilistic set for estimating the popularity (frequency) of an element within an
 // access frequency based time window. The maximum frequency of an element is limited
 // to 15 (4-bits).
 //
@@ -25,6 +21,10 @@ template<
 //
 // The white paper:
 // http://dimacs.rutgers.edu/~graham/pubs/papers/cm-full.pdf
+//-------------------------------------------------------------------------------------//
+template<
+    typename T
+> class FrequencySketch
 //-------------------------------------------------------------------------------------//
 {
     using counter_t = uint64_t;

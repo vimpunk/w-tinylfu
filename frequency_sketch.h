@@ -145,8 +145,7 @@ protected:
      * associated with $hash.
      * Offset may be [0, 60] and is a multiple of 4. $counter_index must be [0, 3].
      */
-    int
-    get_counter_offset(const uint32_t hash, const int counter_index) const noexcept
+    int get_counter_offset(const uint32_t hash, const int counter_index) const noexcept
     {
         return (get_offset_multiplier(hash) + counter_index) << 2;
     }

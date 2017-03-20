@@ -37,13 +37,13 @@ template<
 
 public:
 
-    explicit FrequencySketch(long capacity)
+    explicit FrequencySketch(int capacity)
     {
         change_capacity(capacity);
     }
 
 
-    void change_capacity(const long capacity)
+    void change_capacity(const int capacity)
     {
         if(capacity <= 0)
         {

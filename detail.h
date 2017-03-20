@@ -1,5 +1,5 @@
-#ifndef UTILS_HEADER
-#define UTILS_HEADER
+#ifndef DETAIL_HEADER
+#define DETAIL_HEADER
 
 #include <bitset>
 

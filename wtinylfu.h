@@ -132,6 +132,12 @@ template<
             return --m_lru.end();
         }
 
+
+        const K& get_victim_key() const noexcept
+        {
+            return get_lru_pos()->key;
+        }
+
         
         void evict()
         {
@@ -248,6 +254,12 @@ template<
         }
 
 
+        const K& get_victim_key() const noexcept
+        {
+            return get_victim_pos()->key;
+        }
+
+
         void evict()
         {
             m_probationary.evict();
@@ -318,7 +330,7 @@ template<
 
 public:
 
-    explicit WTinyLFUCache(long capacity)
+    explicit WTinyLFUCache(int capacity)
         : m_filter(capacity)
         , m_window(get_window_capacity(capacity))
         , m_main(capacity - m_window.capacity())
@@ -488,21 +500,21 @@ private:
 
     bool is_window_victim_better_than_main_victim() const noexcept
     {
-        return m_filter.get_frequency(m_window.get_lru_pos()->key)
-             > m_filter.get_frequency(m_main.get_victim_pos()->key);
+        return m_filter.get_frequency(m_window.get_victim_key())
+             > m_filter.get_frequency(m_main.get_victim_key());
     }
 
 
     void evict_from_main()
     {
-        m_page_map.erase(m_main.get_victim_pos()->key);
+        m_page_map.erase(m_main.get_victim_key());
         m_main.evict();
     }
 
 
     void evict_from_window()
     {
-        m_page_map.erase(m_window.get_lru_pos()->key);
+        m_page_map.erase(m_window.get_victim_key());
         m_window.evict();
     }
 };

@@ -1,9 +1,0 @@
-- test whether a frequencyfilter suffices or if we also need a doorkeeper mechanism
-- perhaps rename get_{lru,mru}_pos to get_{cold,hot}_pos to better reflect the names
-- think about whether to employ the policy pattern for the internal caches. though I
-  doubt this is necessary (and it needlessly complicates the implementation as I don't
-  see a good way to adapt independent caches to work well with the window <-> main
-  victim comparison for tinylfu (normally caches don't return the evicted pages or
-  grant clients any access to it, but tinylfu needs the main internal cache's victim
-  to determine whether to admit the window's victim...)
-

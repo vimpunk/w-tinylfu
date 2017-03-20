@@ -353,9 +353,9 @@ public:
             throw std::invalid_argument("cache capacity must be greater than zero!");
         }
 
-        m_filter.change_capacity();
+        m_filter.change_capacity(n);
         m_window.set_capacity(get_window_capacity(n));
-        m_main.set_capacity(capacity - m_window.capacity());
+        m_main.set_capacity(n - m_window.capacity());
         correct_capacity_truncation_error(n);
 
         while(m_window.has_reached_capacity())
@@ -396,7 +396,7 @@ public:
     }
 
 
-    void insert(const K& key, V&& value)
+    void insert(const K& key, V value)
     {
         insert(key, std::make_shared<V>(std::move(value)));
     }

@@ -124,11 +124,9 @@ protected:
      */
     bool try_increment_at(const uint32_t hash, const int counter_index)
     {
-        const int      table_index = get_table_index(hash, counter_index);
-        const int      offset      = get_counter_offset(hash, counter_index);
-        const uint64_t mask        = 0xfL << offset;
-
-        if(can_increment_counter(table_index, mask))
+        const int table_index = get_table_index(hash, counter_index);
+        const int offset      = get_counter_offset(hash, counter_index);
+        if(can_increment_counter(table_index, offset))
         {
             m_table[table_index] += 1L << offset;
             return true;
@@ -166,8 +164,9 @@ protected:
     }
 
     /* Returns true if the counter has not reached the limit of 15. */
-    bool can_increment_counter(const int table_index, const uint64_t mask) const noexcept
+    bool can_increment_counter(const int table_index, const int offset) const noexcept
     {
+        const uint64_t mask = 0xfL << offset;
         return (m_table[table_index] & mask) != mask;
     }
 

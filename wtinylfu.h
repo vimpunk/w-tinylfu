@@ -387,7 +387,7 @@ public:
     std::shared_ptr<V> get_and_insert_if_missing(const K& key, ValueLoader value_loader)
     {
         ValuePtr value = get(key);
-        if(get == nullptr)
+        if(value == nullptr)
         {
             value = std::make_shared<V>(value_loader(key));
             insert(key, value);

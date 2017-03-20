@@ -10,67 +10,57 @@
 #include <cmath>
 #include <cassert>
 
-// TODO
-// - test whether a frequencyfilter suffices or if we also need a doorkeeper mechanism
-// - perhaps rename get_{lru,mru}_pos to get_{cold,hot}_pos to better reflect the names
-// - think about whether to employ the policy pattern for the internal caches. though I
-//   doubt this is necessary (and it needlessly complicates the implementation as I don't
-//   see a good way to adapt independent caches to work well with the window <-> main
-//   victim comparison for tinylfu (normally caches don't return the evicted pages or
-//   grant clients any access to it, but tinylfu needs the main internal cache's victim
-//   to determine whether to admit the window's victim...)
-
-//-------------------------------------------------------------------------------------//
+/**
+ * Window-TinyLFU Cache as per: https://arxiv.org/pdf/1512.00727.pdf
+ *
+ *
+ *           Window Cache Victim .---------. Main Cache Victim    
+ *          .------------------->| TinyLFU |<-----------------.
+ *          |                    `---------'                  |
+ * .-------------------.              |    .------------------.
+ * | Window Cache (1%) |              |    | Main Cache (99%) |
+ * |      (LRU)        |              |    |      (SLRU)      |
+ * `-------------------'              |    `------------------'
+ *          ^                         |               ^
+ *          |                         `---------------'
+ *       new item                        Winner
+ *
+ *
+ * New entries are first placed in the window cache where they remain as long as they
+ * have high temporal locality. An entry that's pushed out of the window cache gets a
+ * chance to be admitted in the front of the main cache. If the main cache is full,
+ * the TinyLFU admission policy determines whether this entry is to replace the main
+ * cache's next victim based on TinyLFU's implementation defined historic frequency
+ * filter. Currently a 4 bit frequency sketch is employed.
+ *
+ * TinyLFU's periodic reset operation ensures that lingering entries that are no longer
+ * accessed are evicted.
+ *
+ * NOTE: it is advised that trivially copiable, small keys be used as there persist two
+ * copies of each within the cache.
+ * NOTE: it is NOT thread-safe!
+ */
 template<
     typename K,
     typename V
 > class WTinyLFUCache
-//-------------------------------------------------------------------------------------//
-// Window-TinyLFU Cache as per: https://arxiv.org/pdf/1512.00727.pdf
-//
-//
-//           Window Cache Victim .---------. Main Cache Victim    
-//          .------------------->| TinyLFU |<-----------------.
-//          |                    `---------'                  |
-// .-------------------.              |    .------------------.
-// | Window Cache (1%) |              |    | Main Cache (99%) |
-// |      (LRU)        |              |    |      (SLRU)      |
-// `-------------------'              |    `------------------'
-//          ^                         |               ^
-//          |                         `---------------'
-//       new item                        Winner
-//
-//
-// New entries are first placed in the window cache where they remain as long as they
-// have high temporal locality. An entry that's pushed out of the window cache gets a
-// chance to be admitted in the front of the main cache. If the main cache is full,
-// the TinyLFU admission policy determines whether this entry is to replace the main
-// cache's next victim based on TinyLFU's implementation defined historic frequency
-// filter. Currently a 4 bit frequency sketch is employed.
-//
-// TinyLFU's periodic reset operation ensures that lingering entries that are no longer
-// accessed are evicted.
-//
-// NOTE: it is advised that trivially copiable, small keys be used as there persist two
-// copies of each within the cache.
-//-------------------------------------------------------------------------------------//
 {
-    // MRU = Most Recently Used page
-    // LRU = Least Recently Used page
-
     using ValuePtr = std::shared_ptr<V>;
 
-    enum class CacheType { WINDOW, PROBATIONARY, PROTECTED };
+
+    enum class CacheType
+    {
+        WINDOW,
+        PROBATIONARY,
+        PROTECTED
+    };
 
 
-    //---------------------------------------------------------------------------------//
     struct Page
-    //---------------------------------------------------------------------------------//
     {
         K         key;
         CacheType cache_type;
         ValuePtr  data;
-
 
         Page(K key_, CacheType cache_type_, ValuePtr data_)
             : key(key_)
@@ -80,19 +70,15 @@ template<
     };
 
 
-    //---------------------------------------------------------------------------------//
     class LRU
-    //---------------------------------------------------------------------------------//
     {
-        using LRU_t = std::list<Page>;
-
-        LRU_t m_lru;
-        int   m_capacity;
+        std::list<Page> m_lru;
+        int             m_capacity;
 
     public:
 
-        using page_position       = typename LRU_t::iterator;
-        using const_page_position = typename LRU_t::const_iterator;
+        using page_position       = typename std::list<Page>::iterator;
+        using const_page_position = typename std::list<Page>::const_iterator;
 
 
         explicit LRU(int capacity) : m_capacity(capacity) {}
@@ -124,7 +110,7 @@ template<
             m_capacity = n;
         }
 
-
+        /* Returns the position of the hottest (most recently used) page. */
         page_position get_mru_pos() noexcept
         {
             return m_lru.begin();
@@ -135,7 +121,7 @@ template<
             return m_lru.begin();
         }
 
-
+        /* Returns the position of the coldest (least recently used) page. */
         page_position get_lru_pos() noexcept
         {
             return --m_lru.end();
@@ -172,29 +158,27 @@ template<
         }
     };
 
-
-    //---------------------------------------------------------------------------------//
+    /**
+     * A cache which is divided into two segments, a probationary and a protected
+     * segment. Both are LRU caches.
+     *
+     * Pages that are cache hits are promoted to the top (MRU position) of the protected
+     * segment, regardless of the segment in which they currently reside. Thus, pages
+     * within the protected segment have been accessed at least twice.
+     *
+     * Pages that are cache MISSES are added to the cache at the MRU position of the
+     * probationary segment.
+     *
+     * Each segment is finite in size, so the migration of a page from the probationary
+     * segment may force the LRU page of the protected segment into the MRU position of
+     * the probationary segment, giving it another chance. Likewise, if both segments
+     * reached their capacity, a new entry is replaced with the LRU victim of the
+     * probationary segment.
+     *
+     * In this implementation 80% of the capacity is allocated to the protected (the
+     * "hot" pages) and 20% for pages under probation (the "cold" pages).
+     */
     class SLRU
-    //---------------------------------------------------------------------------------//
-    // A cache which is divided into two segments, a probationary and a protected
-    // segment. Both are LRU caches.
-    //
-    // Pages that are cache hits are promoted to the top (MRU position) of the protected
-    // segment, regardless of the segment in which they currently reside. Thus, pages
-    // within the protected segment have been accessed at least twice.
-    //
-    // Pages that are cache MISSES are added to the cache at the MRU position of the
-    // probationary segment.
-    //
-    // Each segment is finite in size, so the migration of a page from the probationary
-    // segment may force the LRU page of the protected segment into the MRU position of
-    // the probationary segment, giving it another chance. Likewise, if both segments
-    // reached their capacity, a new entry is replaced with the LRU victim of the
-    // probationary segment.
-    //
-    // In this implementation 80% of the capacity is allocated to the protected (the
-    // "hot" pages) and 20% for pages under probation (the "cold" pages).
-    //---------------------------------------------------------------------------------//
     {
         LRU m_protected;
         LRU m_probationary;
@@ -372,14 +356,12 @@ public:
         m_filter.change_capacity();
         m_window.set_capacity(get_window_capacity(n));
         m_main.set_capacity(capacity - m_window.capacity());
-
         correct_capacity_truncation_error(n);
 
         while(m_window.has_reached_capacity())
         {
             evict_from_window();
         }
-
         while(m_main.has_reached_capacity())
         {
             evict_from_main();
@@ -448,14 +430,12 @@ private:
         {
             evict();
         }
-
         if(is_in_cache(m_page_map.find(key)))
         {
             // TODO think about whether this is the appropriate reaction. maybe data
             // should just be overwritten? or just return without overwriting or throwing?
             throw std::invalid_argument("key already in cache");
         }
-
         m_page_map.emplace(key, m_window.insert(key, CacheType::WINDOW, data));
     }
 
@@ -483,7 +463,7 @@ private:
     {
         if(size() >= capacity())
         {
-            erase_from_window_or_main();
+            evict_from_window_or_main();
         }
         else
         {
@@ -492,7 +472,7 @@ private:
     }
 
 
-    void erase_from_window_or_main()
+    void evict_from_window_or_main()
     {
         if(is_window_victim_better_than_main_victim())
         {

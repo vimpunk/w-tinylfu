@@ -8,24 +8,23 @@
 #include <iostream>
 
 
-//-------------------------------------------------------------------------------------//
-// A probabilistic set for estimating the popularity (frequency) of an element within an
-// access frequency based time window. The maximum frequency of an element is limited
-// to 15 (4-bits).
-//
-// NOTE: the capacity will be the nearest power of two of the input capacity (for various
-// efficiency and hash distribution gains).
-//
-// This is a slightly altered version of Caffeine's implementation:
-// https://github.com/ben-manes/caffeine
-//
-// The white paper:
-// http://dimacs.rutgers.edu/~graham/pubs/papers/cm-full.pdf
-//-------------------------------------------------------------------------------------//
+/**
+ * A probabilistic set for estimating the popularity (frequency) of an element within an
+ * access frequency based time window. The maximum frequency of an element is limited
+ * to 15 (4-bits).
+ *
+ * NOTE: the capacity will be the nearest power of two of the input capacity (for various
+ * efficiency and hash distribution gains).
+ *
+ * This is a slightly altered version of Caffeine's implementation:
+ * https://github.com/ben-manes/caffeine
+ *
+ * The white paper:
+ * http://dimacs.rutgers.edu/~graham/pubs/papers/cm-full.pdf
+ */
 template<
     typename T
 > class FrequencySketch
-//-------------------------------------------------------------------------------------//
 {
     using counter_t = uint64_t;
 
@@ -85,7 +84,7 @@ public:
             was_added |= try_increment_at(hash, i);
         }
 
-        if(was_added && (++m_size == get_sample_size()))
+        if(was_added && (++m_size == get_sampling_size()))
         {
             reset();
         }
@@ -131,7 +130,6 @@ protected:
 
         if(can_increment_counter(table_index, mask))
         {
-            // increment TODO perhaps put in own fn
             m_table[table_index] += 1L << offset;
             return true;
         }
@@ -174,7 +172,7 @@ protected:
     }
 
     /* Halves every counter and adjusts $m_size. */
-    void reset() noexcept // TODO verify noexcept claim
+    void reset() noexcept
     {
         for(auto& counter : m_table)
         {
@@ -193,7 +191,7 @@ protected:
     }
 
 
-    int get_sample_size() const noexcept
+    int get_sampling_size() const noexcept
     {
         return m_table.size() * 10;
     }

@@ -130,7 +130,7 @@ template<
             m_capacity = n;
         }
 
-        /* Returns the position of the hottest (most recently used) page. */
+        /** Returns the position of the hottest (most recently used) page. */
         page_position get_mru_pos() noexcept
         {
             return m_lru.begin();
@@ -141,7 +141,7 @@ template<
             return m_lru.begin();
         }
 
-        /* Returns the position of the coldest (least recently used) page. */
+        /** Returns the position of the coldest (least recently used) page. */
         page_position get_lru_pos() noexcept
         {
             return --m_lru.end();
@@ -164,14 +164,14 @@ template<
             m_lru.erase(get_lru_pos());
         }
 
-        /* Inserts new page at the MRU position of the cache. */
+        /** Inserts new page at the MRU position of the cache. */
         template<typename... Args>
         page_position insert(Args&&... args)
         {
             return m_lru.emplace(get_mru_pos(), std::forward<Args>(args)...);
         }
 
-        /* Moves page to the MRU position. */
+        /** Moves page to the MRU position. */
         void handle_hit(page_position page)
         {
             transfer_page_from(page, *this);
@@ -218,7 +218,7 @@ template<
         explicit SLRU(int capacity)
             : SLRU(0.8f * capacity, 0.2f * capacity)
         {
-            if(this->capacity() < capacity)
+            while(this->capacity() < capacity)
             {
                 m_protected.set_capacity(m_protected.capacity() + 1);
             }
@@ -285,7 +285,7 @@ template<
             m_probationary.evict();
         }
 
-        /* Moves page to the MRU position of the probationary segment. */
+        /** Moves page to the MRU position of the probationary segment. */
         void transfer_page_from(page_position page, LRU& source)
         {
             m_probationary.transfer_page_from(page, source);
@@ -371,13 +371,15 @@ public:
     }
 
 
-    bool has(const K& key) const noexcept
+    bool contains(const K& key) const noexcept
     {
-        return is_in_cache(m_page_map.find(key));
+        return m_page_map.find(key) != m_page_map.cend();
     }
 
-    /* NOTE: after this operation the accuracy of the cache will suffer until enough
-     * historic data is gathered. */
+    /**
+     * NOTE: after this operation the accuracy of the cache will suffer until enough
+     * historic data is gathered.
+     */
     void change_capacity(const int n)
     {
         if(n <= 0)
@@ -405,7 +407,7 @@ public:
     {
         m_filter.record_access(key);
         auto it = m_page_map.find(key);
-        if(is_in_cache(it))
+        if(it != m_page_map.end())
         {
             auto page = it->second;
             handle_hit(page);
@@ -450,19 +452,13 @@ private:
     }
 
 
-    bool is_in_cache(typename PageMap::const_iterator it) const noexcept
-    {
-        return it != m_page_map.cend();
-    }
-
-
     void insert(const K& key, ValuePtr data)
     {
         if(m_window.has_reached_capacity())
         {
             evict();
         }
-        if(is_in_cache(m_page_map.find(key)))
+        if(contains(key))
         {
             // TODO think about whether this is the appropriate reaction. maybe data
             // should just be overwritten? or just return without overwriting or throwing?

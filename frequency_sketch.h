@@ -27,7 +27,6 @@
 #include <cmath>
 #include <iostream>
 
-
 /**
  * A probabilistic set for estimating the popularity (frequency) of an element within an
  * access frequency based time window. The maximum frequency of an element is limited
@@ -46,12 +45,12 @@ template<
     typename T
 > class FrequencySketch
 {
-    using counter_t = uint64_t;
+    using counters_t = uint64_t;
 
     // Holds 64 bit blocks, each of which holds 16 counters. For simplicity's sake the
     // 64 bit blocks are partitioned into four 16 bit sub-blocks, and the four counters
     // corresponding to some T is within a single such sub-block.
-    std::vector<counter_t> m_table;
+    std::vector<counters_t> m_table;
     // Incremented with each call to record_access, halved when sampling size is reached.
     int m_size;
 
@@ -183,30 +182,30 @@ protected:
         return (hash & 3) << 2;
     }
 
-    /* Returns true if the counter has not reached the limit of 15. */
+    /** Returns true if the counter has not reached the limit of 15. */
     bool can_increment_counter(const int table_index, const int offset) const noexcept
     {
         const uint64_t mask = 0xfL << offset;
         return (m_table[table_index] & mask) != mask;
     }
 
-    /* Halves every counter and adjusts $m_size. */
+    /** Halves every counter and adjusts $m_size. */
     void reset() noexcept
     {
-        for(auto& counter : m_table)
+        for(auto& counters : m_table)
         {
-            halve(counter);
+            halve(counters);
         }
         m_size /= 2;
     }
 
 
-    void halve(counter_t& counter) noexcept
+    void halve(counters_t& counters) noexcept
     {
         // Do a 'bitwise_and' on each counter with 0111 (7) so as to eliminate the bit
         // that got shifted over to the leftmost position of a counter from the previous
         // one.
-        counter = (counter >> 1) & 0x77'77'77'77'77'77'77'77L;
+        counters = (counters >> 1) & 0x77'77'77'77'77'77'77'77L;
     }
 
 

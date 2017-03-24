@@ -25,7 +25,7 @@
 
 #include <vector>
 #include <cmath>
-#include <iostream>
+#include <stdexcept>
 
 /**
  * A probabilistic set for estimating the popularity (frequency) of an element within an
@@ -45,9 +45,9 @@ template<
     typename T
 > class FrequencySketch
 {
-    // Holds 64 bit blocks, each of which holds 16 counters. For simplicity's sake the
-    // 64 bit blocks are partitioned into four 16 bit sub-blocks, and the four counters
-    // corresponding to some T is within a single such sub-block.
+    // Holds 64 bit blocks, each of which holds sixteen 4 bit counters. For simplicity's
+    // sake, the 64 bit blocks are partitioned into four 16 bit sub-blocks, and the four
+    // counters corresponding to some T is within a single such sub-block.
     std::vector<uint64_t> m_table;
     // Incremented with each call to record_access, halved when sampling size is reached.
     int m_size;
@@ -192,21 +192,18 @@ protected:
     {
         for(auto& counters : m_table)
         {
-            halve(counters);
+            // Do a 'bitwise_and' on each (4 bit) counter with 0111 (7) so as to
+            // eliminate the bit that got shifted over from the counter to the left to
+            // the leftmost position of the current counter.
+            counters = (counters >> 1) & 0x7777777777777777L;
         }
         m_size /= 2;
     }
 
-
-    void halve(uint64_t& counters) noexcept
-    {
-        // Do a 'bitwise_and' on each counter with 0111 (7) so as to eliminate the bit
-        // that got shifted over to the leftmost position of a counter from the previous
-        // one.
-        counters = (counters >> 1) & 0x7777777777777777L;
-    }
-
-
+    /**
+     * The reset operation is launched when $m_size reaches the value returned by this
+     * function.
+     */
     int get_sampling_size() const noexcept
     {
         return m_table.size() * 10;

@@ -21,8 +21,8 @@
 #ifndef WTINYLFU_HEADER
 #define WTINYLFU_HEADER
 
-#include "detail.h"
 #include "frequency_sketch.h"
+#include "detail.h"
 
 #include <map>
 #include <list>
@@ -161,7 +161,13 @@ template<
         
         void evict()
         {
-            m_lru.erase(get_lru_pos());
+            erase(get_lru_pos());
+        }
+
+
+        void erase(page_position page)
+        {
+            m_lru.erase(page);
         }
 
         /** Inserts new page at the MRU position of the cache. */
@@ -282,6 +288,19 @@ template<
         void evict()
         {
             m_probationary.evict();
+        }
+
+
+        void erase(page_position page)
+        {
+            if(page.cache_type == CacheType::PROTECTED)
+            {
+                m_protected.erase(page);
+            }
+            else
+            {
+                m_probationary.erase(page);
+            }
         }
 
         /** Moves page to the MRU position of the probationary segment. */
@@ -407,7 +426,7 @@ public:
         auto it = m_page_map.find(key);
         if(it != m_page_map.end())
         {
-            auto page = it->second;
+            auto& page = it->second;
             handle_hit(page);
             return page->data;
         }
@@ -431,6 +450,25 @@ public:
     void insert(const K& key, V value)
     {
         insert(key, std::make_shared<V>(std::move(value)));
+    }
+
+
+    void erase(const K& key)
+    {
+        auto it = m_page_map.find(key);
+        if(it != m_page_map.end())
+        {
+            auto& page = it->second;
+            if(page->cache_type == CacheType::WINDOW)
+            {
+                m_window.erase(page);
+            }
+            else
+            {
+                m_main.erase(page);
+            }
+            m_page_map.erase(it);
+        }
     }
 
 private:

@@ -45,12 +45,10 @@ template<
     typename T
 > class FrequencySketch
 {
-    using counters_t = uint64_t;
-
     // Holds 64 bit blocks, each of which holds 16 counters. For simplicity's sake the
     // 64 bit blocks are partitioned into four 16 bit sub-blocks, and the four counters
     // corresponding to some T is within a single such sub-block.
-    std::vector<counters_t> m_table;
+    std::vector<uint64_t> m_table;
     // Incremented with each call to record_access, halved when sampling size is reached.
     int m_size;
 
@@ -200,12 +198,12 @@ protected:
     }
 
 
-    void halve(counters_t& counters) noexcept
+    void halve(uint64_t& counters) noexcept
     {
         // Do a 'bitwise_and' on each counter with 0111 (7) so as to eliminate the bit
         // that got shifted over to the leftmost position of a counter from the previous
         // one.
-        counters = (counters >> 1) & 0x77'77'77'77'77'77'77'77L;
+        counters = (counters >> 1) & 0x7777777777777777L;
     }
 
 

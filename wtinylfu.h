@@ -116,12 +116,12 @@ template<
         }
 
 
-        bool has_reached_capacity() const noexcept
+        bool is_full() const noexcept
         {
             return size() >= capacity();
         }
 
-        // NOTE: doesn't actually remove any pages, it only sets the capacity!
+        // NOTE: doesn't actually remove any pages, it only sets the capacity.
         //
         // This is because otherwise there'd be no way to delete the corresponding
         // entries from the page map outside of this LRU instance.
@@ -177,7 +177,7 @@ template<
             transfer_page_from(page, *this);
         }
 
-
+        /** Moves page from $source to the MRU position of this cache. */
         void transfer_page_from(page_position page, LRU& source)
         {
             m_lru.splice(get_mru_pos(), source.m_lru, page);
@@ -192,7 +192,7 @@ template<
      * segment, regardless of the segment in which they currently reside. Thus, pages
      * within the protected segment have been accessed at least twice.
      *
-     * Pages that are cache MISSES are added to the cache at the MRU position of the
+     * Pages that are cache misses are added to the cache at the MRU position of the
      * probationary segment.
      *
      * Each segment is finite in size, so the migration of a page from the probationary
@@ -215,8 +215,7 @@ template<
         using const_page_position = typename LRU::const_page_position;
 
 
-        explicit SLRU(int capacity)
-            : SLRU(0.8f * capacity, 0.2f * capacity)
+        explicit SLRU(int capacity) : SLRU(0.8f * capacity, 0.2f * capacity)
         {
             while(this->capacity() < capacity)
             {
@@ -242,7 +241,7 @@ template<
         }
 
 
-        const bool has_reached_capacity() const noexcept
+        const bool is_full() const noexcept
         {
             return size() >= capacity();
         }
@@ -306,7 +305,7 @@ template<
             if(page->cache_type == CacheType::PROBATIONARY)
             {
                 promote_to_protected(page);
-                if(m_protected.has_reached_capacity())
+                if(m_protected.is_full())
                 {
                     demote_to_probationary(m_protected.get_lru_pos());
                 }
@@ -319,6 +318,8 @@ template<
         }
 
     private:
+
+        // Both of the below functions promote to the MRU position.
 
         void promote_to_protected(page_position page)
         {
@@ -354,9 +355,7 @@ public:
         : m_filter(capacity)
         , m_window(get_window_capacity(capacity))
         , m_main(capacity - m_window.capacity())
-    {
-        correct_capacity_truncation_error(capacity);
-    }
+    {}
 
 
     int size() const noexcept
@@ -378,7 +377,7 @@ public:
 
     /**
      * NOTE: after this operation the accuracy of the cache will suffer until enough
-     * historic data is gathered.
+     * historic data is gathered (because the frequency sketch is cleared).
      */
     void change_capacity(const int n)
     {
@@ -390,13 +389,12 @@ public:
         m_filter.change_capacity(n);
         m_window.set_capacity(get_window_capacity(n));
         m_main.set_capacity(n - m_window.capacity());
-        correct_capacity_truncation_error(n);
 
-        while(m_window.has_reached_capacity())
+        while(m_window.is_full())
         {
             evict_from_window();
         }
-        while(m_main.has_reached_capacity())
+        while(m_main.is_full())
         {
             evict_from_main();
         }
@@ -443,28 +441,22 @@ private:
     }
     
 
-    void correct_capacity_truncation_error(const int desired_capacity)
-    {
-        while(capacity() < desired_capacity)
-        {
-            m_main.set_capacity(m_main.capacity() + 1);
-        }
-    }
-
-
     void insert(const K& key, ValuePtr data)
     {
-        if(m_window.has_reached_capacity())
+        if(m_window.is_full())
         {
             evict();
         }
-        if(contains(key))
+
+        auto it = m_page_map.find(key);
+        if(it != m_page_map.end())
         {
-            // TODO think about whether this is the appropriate reaction. maybe data
-            // should just be overwritten? or just return without overwriting or throwing?
-            throw std::invalid_argument("key already in cache");
+            it->second->data = data;
         }
-        m_page_map.emplace(key, m_window.insert(key, CacheType::WINDOW, data));
+        else
+        {
+            m_page_map.emplace(key, m_window.insert(key, CacheType::WINDOW, data));
+        }
     }
 
 
@@ -482,10 +474,10 @@ private:
 
     /**
      * Evicts from the window cache to the main cache's probationary space.
-     * It is called once the window cache is full. If the cache's total size exceeds its
+     * It is called when the window cache is full. If the cache's total size exceeds its
      * capacity, the window cache's victim and the main cache's eviction candidate are
-     * evaluated and one is evicted. Otherwise, the window cache's victim is transferred
-     * to the main cache.
+     * evaluated and the one with the worse (estimated) access frequency is evicted.
+     * Otherwise, the window cache's victim is just transferred to the main cache.
      */
     void evict()
     {
@@ -502,7 +494,10 @@ private:
 
     void evict_from_window_or_main()
     {
-        if(is_window_victim_better_than_main_victim())
+        const int window_victim_freq = m_filter.get_frequency(m_window.get_victim_key());
+        const int main_victim_freq   = m_filter.get_frequency(m_main.get_victim_key());
+
+        if(window_victim_freq > main_victim_freq)
         {
             evict_from_main();
             m_main.transfer_page_from(m_window.get_lru_pos(), m_window);
@@ -511,13 +506,6 @@ private:
         {
             evict_from_window();
         }
-    }
-
-
-    bool is_window_victim_better_than_main_victim() const noexcept
-    {
-        return m_filter.get_frequency(m_window.get_victim_key())
-             > m_filter.get_frequency(m_main.get_victim_key());
     }
 
 

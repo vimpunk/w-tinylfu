@@ -1,4 +1,4 @@
-/* Copyright 2016 https://github.com/mandreyel
+/* Copyright 2017 https://github.com/mandreyel
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this
  * software and associated documentation files (the "Software"), to deal in the Software
@@ -221,13 +221,9 @@ template<
         using const_page_position = typename LRU::const_page_position;
 
 
-        explicit SLRU(int capacity) : SLRU(0.8f * capacity, 0.2f * capacity)
-        {
-            while(this->capacity() < capacity)
-            {
-                m_protected.set_capacity(m_protected.capacity() + 1);
-            }
-        }
+        explicit SLRU(int capacity)
+            : SLRU(0.8f * capacity, capacity - 0.8f * capacity)
+        {}
 
         explicit SLRU(int protected_capacity, int probationary_capacity)
             : m_protected(protected_capacity)
@@ -255,16 +251,8 @@ template<
 
         void set_capacity(const int n)
         {
-            int       protected_capacity    = 0.8f * n;
-            const int probationary_capacity = 0.2f * n;
-
-            while(protected_capacity + probationary_capacity < n)
-            {
-                ++protected_capacity;
-            }
-
-            m_protected.set_capacity(protected_capacity);
-            m_probationary.set_capacity(probationary_capacity);
+            m_protected.set_capacity(0.8f * n);
+            m_probationary.set_capacity(n - m_protected.capacity());
         }
 
 
@@ -447,9 +435,9 @@ public:
     }
 
 
-    void insert(const K& key, V value)
+    void insert(K key, V value)
     {
-        insert(key, std::make_shared<V>(std::move(value)));
+        insert(std::move(key), std::make_shared<V>(std::move(value)));
     }
 
 
@@ -512,10 +500,11 @@ private:
 
     /**
      * Evicts from the window cache to the main cache's probationary space.
-     * It is called when the window cache is full. If the cache's total size exceeds its
-     * capacity, the window cache's victim and the main cache's eviction candidate are
-     * evaluated and the one with the worse (estimated) access frequency is evicted.
-     * Otherwise, the window cache's victim is just transferred to the main cache.
+     * Called when the window cache is full.
+     * If the cache's total size exceeds its capacity, the window cache's victim and
+     * the main cache's eviction candidate are evaluated and the one with the worse
+     * (estimated) access frequency is evicted. Otherwise, the window cache's victim is
+     * just transferred to the main cache.
      */
     void evict()
     {

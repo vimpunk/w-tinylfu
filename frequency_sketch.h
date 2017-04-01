@@ -98,7 +98,7 @@ public:
 
         for(auto i = 0; i < 4; ++i)
         {
-            was_added |= try_increment_at(hash, i);
+            was_added |= try_increment_counter_at(hash, i);
         }
 
         if(was_added && (++m_size == get_sampling_size()))
@@ -139,11 +139,11 @@ protected:
      * Increments ${counter_index}th counter by 1 if it's below the maximum value (15).
      * Returns true if the counter was incremented.
      */
-    bool try_increment_at(const uint32_t hash, const int counter_index)
+    bool try_increment_counter_at(const uint32_t hash, const int counter_index)
     {
         const int table_index = get_table_index(hash, counter_index);
         const int offset      = get_counter_offset(hash, counter_index);
-        if(can_increment_counter(table_index, offset))
+        if(can_increment_counter_at(table_index, offset))
         {
             m_table[table_index] += 1L << offset;
             return true;
@@ -181,7 +181,7 @@ protected:
     }
 
     /** Returns true if the counter has not reached the limit of 15. */
-    bool can_increment_counter(const int table_index, const int offset) const noexcept
+    bool can_increment_counter_at(const int table_index, const int offset) const noexcept
     {
         const uint64_t mask = 0xfL << offset;
         return (m_table[table_index] & mask) != mask;

@@ -24,7 +24,6 @@
 #include "frequency_sketch.hpp"
 #include "detail.hpp"
 
-#include <iostream>
 #include <map>
 #include <list>
 #include <memory>
@@ -318,10 +317,7 @@ public:
         : m_filter(capacity)
         , m_window(window_capacity(capacity))
         , m_main(capacity - m_window.capacity())
-    {
-        std::cout << "window capacity: " << m_window.capacity() << '\n';
-        std::cout << "main capacity: " << m_main.capacity() << '\n';
-    }
+    {}
 
     int size() const noexcept
     {

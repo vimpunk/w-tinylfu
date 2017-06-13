@@ -21,9 +21,10 @@
 #ifndef WTINYLFU_HEADER
 #define WTINYLFU_HEADER
 
-#include "frequency_sketch.h"
-#include "detail.h"
+#include "frequency_sketch.hpp"
+#include "detail.hpp"
 
+#include <iostream>
 #include <map>
 #include <list>
 #include <memory>
@@ -34,7 +35,7 @@
  * Window-TinyLFU Cache as per: https://arxiv.org/pdf/1512.00727.pdf
  *
  *
- *           Window Cache Victim .---------. Main Cache Victim    
+ *           Window Cache Victim .---------. Main Cache Victim
  *          .------------------->| TinyLFU |<-----------------.
  *          |                    `---------'                  |
  * .-------------------.              |    .------------------.
@@ -63,107 +64,71 @@
 template<
     typename K,
     typename V
-> class WTinyLFUCache
+> class wtinylfu_cache
 {
-    using ValuePtr = std::shared_ptr<V>;
-
-
-    enum class CacheType
+    enum class cache_t
     {
-        WINDOW,
-        PROBATIONARY,
-        PROTECTED
+        window,
+        probationary,
+        eden
     };
 
-
-    struct Page
+    struct page
     {
-        K         key;
-        CacheType cache_type;
-        ValuePtr  data;
+        K key;
+        cache_t cache_type;
+        std::shared_ptr<V> data;
 
-        Page(K key_, CacheType cache_type_, ValuePtr data_)
+        page(K key_, cache_t cache_type_, std::shared_ptr<V> data_)
             : key(key_)
             , cache_type(cache_type_)
             , data(data_)
         {}
     };
 
-
-    class LRU
+    class lru
     {
-        std::list<Page> m_lru;
-        int             m_capacity;
+        std::list<page> m_lru;
+        int m_capacity;
 
     public:
 
-        using page_position       = typename std::list<Page>::iterator;
-        using const_page_position = typename std::list<Page>::const_iterator;
+        using page_position = typename std::list<page>::iterator;
+        using const_page_position = typename std::list<page>::const_iterator;
 
 
-        explicit LRU(int capacity) : m_capacity(capacity) {}
+        explicit lru(int capacity) : m_capacity(capacity) {}
 
+        int size() const noexcept { return m_lru.size(); }
+        int capacity() const noexcept { return m_capacity; }
+        bool is_full() const noexcept { return size() >= capacity(); }
 
-        int size() const noexcept
-        {
-            return m_lru.size();
-        }
-
-
-        int capacity() const noexcept
-        {
-            return m_capacity;
-        }
-
-
-        bool is_full() const noexcept
-        {
-            return size() >= capacity();
-        }
-
-        // NOTE: doesn't actually remove any pages, it only sets the capacity.
-        //
-        // This is because otherwise there'd be no way to delete the corresponding
-        // entries from the page map outside of this LRU instance.
-        void set_capacity(const int n) noexcept
-        {
-            m_capacity = n;
-        }
+        /**
+         * NOTE: doesn't actually remove any pages, it only sets the capacity.
+         *
+         * This is because otherwise there'd be no way to delete the corresponding
+         * entries from the page map outside of this LRU instance, so this is handled
+         * externally.
+         */
+        void set_capacity(const int n) noexcept { m_capacity = n; }
 
         /** Returns the position of the hottest (most recently used) page. */
-        page_position get_mru_pos() noexcept
-        {
-            return m_lru.begin();
-        }
-
-        const_page_position get_mru_pos() const noexcept
-        {
-            return m_lru.begin();
-        }
+        page_position mru_pos() noexcept { return m_lru.begin(); }
+        const_page_position mru_pos() const noexcept { return m_lru.begin(); }
 
         /** Returns the position of the coldest (least recently used) page. */
-        page_position get_lru_pos() noexcept
+        page_position lru_pos() noexcept { return --m_lru.end(); }
+        const_page_position lru_pos() const noexcept { return --m_lru.end(); }
+
+        const K& victim_key() const noexcept
         {
-            return --m_lru.end();
+            return lru_pos()->key;
         }
 
-        const_page_position get_lru_pos() const noexcept
-        {
-            return --m_lru.end();
-        }
-
-
-        const K& get_victim_key() const noexcept
-        {
-            return get_lru_pos()->key;
-        }
-
-        
         void evict()
         {
-            erase(get_lru_pos());
+            erase(lru_pos());
         }
-
 
         void erase(page_position page)
         {
@@ -174,7 +139,7 @@ template<
         template<typename... Args>
         page_position insert(Args&&... args)
         {
-            return m_lru.emplace(get_mru_pos(), std::forward<Args>(args)...);
+            return m_lru.emplace(mru_pos(), std::forward<Args>(args)...);
         }
 
         /** Moves page to the MRU position. */
@@ -184,143 +149,136 @@ template<
         }
 
         /** Moves page from $source to the MRU position of this cache. */
-        void transfer_page_from(page_position page, LRU& source)
+        void transfer_page_from(page_position page, lru& source)
         {
-            m_lru.splice(get_mru_pos(), source.m_lru, page);
+            m_lru.splice(mru_pos(), source.m_lru, page);
         }
     };
 
     /**
-     * A cache which is divided into two segments, a probationary and a protected
+     * A cache which is divided into two segments, a probationary and a eden
      * segment. Both are LRU caches.
      *
-     * Pages that are cache hits are promoted to the top (MRU position) of the protected
+     * Pages that are cache hits are promoted to the top (MRU position) of the eden
      * segment, regardless of the segment in which they currently reside. Thus, pages
-     * within the protected segment have been accessed at least twice.
+     * within the eden segment have been accessed at least twice.
      *
      * Pages that are cache misses are added to the cache at the MRU position of the
      * probationary segment.
      *
      * Each segment is finite in size, so the migration of a page from the probationary
-     * segment may force the LRU page of the protected segment into the MRU position of
+     * segment may force the LRU page of the eden segment into the MRU position of
      * the probationary segment, giving it another chance. Likewise, if both segments
      * reached their capacity, a new entry is replaced with the LRU victim of the
      * probationary segment.
      *
-     * In this implementation 80% of the capacity is allocated to the protected (the
+     * In this implementation 80% of the capacity is allocated to the eden (the
      * "hot" pages) and 20% for pages under probation (the "cold" pages).
      */
-    class SLRU
+    class slru
     {
-        LRU m_protected;
-        LRU m_probationary;
+        lru m_eden;
+        lru m_probationary;
 
     public:
 
-        using page_position       = typename LRU::page_position;
-        using const_page_position = typename LRU::const_page_position;
+        using page_position = typename lru::page_position;
+        using const_page_position = typename lru::const_page_position;
 
+        explicit slru(int capacity)
+            : slru(0.8f * capacity, capacity - 0.8f * capacity)
+        {
+            // correct truncation error
+            if(this->capacity() < capacity)
+            {
+                m_eden.set_capacity(m_eden.capacity() + 1);
+            }
+        }
 
-        explicit SLRU(int capacity)
-            : SLRU(0.8f * capacity, capacity - 0.8f * capacity)
-        {}
-
-        explicit SLRU(int protected_capacity, int probationary_capacity)
-            : m_protected(protected_capacity)
+        explicit slru(int eden_capacity, int probationary_capacity)
+            : m_eden(eden_capacity)
             , m_probationary(probationary_capacity)
         {}
 
-
         const int size() const noexcept
         {
-            return m_protected.size() + m_probationary.size();
+            return m_eden.size() + m_probationary.size();
         }
-
 
         const int capacity() const noexcept
         {
-            return m_protected.capacity() + m_probationary.capacity();
+            return m_eden.capacity() + m_probationary.capacity();
         }
-
 
         const bool is_full() const noexcept
         {
             return size() >= capacity();
         }
 
-
         void set_capacity(const int n)
         {
-            m_protected.set_capacity(0.8f * n);
-            m_probationary.set_capacity(n - m_protected.capacity());
+            m_eden.set_capacity(0.8f * n);
+            m_probationary.set_capacity(n - m_eden.capacity());
         }
 
-
-        page_position get_victim_pos() noexcept
+        page_position victim_pos() noexcept
         {
-            return m_probationary.get_lru_pos();
+            return m_probationary.lru_pos();
         }
 
-        const_page_position get_victim_pos() const noexcept
+        const_page_position victim_pos() const noexcept
         {
-            return m_probationary.get_lru_pos();
+            return m_probationary.lru_pos();
         }
 
-
-        const K& get_victim_key() const noexcept
+        const K& victim_key() const noexcept
         {
-            return get_victim_pos()->key;
+            return victim_pos()->key;
         }
-
 
         void evict()
         {
             m_probationary.evict();
         }
 
-
         void erase(page_position page)
         {
-            if(page.cache_type == CacheType::PROTECTED)
-            {
-                m_protected.erase(page);
-            }
+            if(page.cache_type == cache_t::eden)
+                m_eden.erase(page);
             else
-            {
                 m_probationary.erase(page);
-            }
         }
 
         /** Moves page to the MRU position of the probationary segment. */
-        void transfer_page_from(page_position page, LRU& source)
+        void transfer_page_from(page_position page, lru& source)
         {
             m_probationary.transfer_page_from(page, source);
-            page->cache_type = CacheType::PROBATIONARY;
+            page->cache_type = cache_t::probationary;
         }
 
         /**
          * If page is in the probationary segment:
-         * promotes page to the MRU position of the protected segment, and if protected
-         * segment capacity is reached, moves the LRU page of the protected segment to
-         * the MRU position of the probationary segment.
+         * promotes page to the MRU position of the eden segment, and if eden segment
+         * capacity is reached, moves the LRU page of the eden segment to the MRU
+         * position of the probationary segment.
          *
-         * Otherwise, page is in protected:
-         * promotes page to the MRU position of protected.
+         * Otherwise, page is in eden:
+         * promotes page to the MRU position of eden.
          */
         void handle_hit(page_position page)
         {
-            if(page->cache_type == CacheType::PROBATIONARY)
+            if(page->cache_type == cache_t::probationary)
             {
-                promote_to_protected(page);
-                if(m_protected.is_full())
+                promote_to_eden(page);
+                if(m_eden.is_full())
                 {
-                    demote_to_probationary(m_protected.get_lru_pos());
+                    demote_to_probationary(m_eden.lru_pos());
                 }
             }
             else
             {
-                assert(page->cache_type == CacheType::PROTECTED); // this shouldn't happen
-                m_protected.handle_hit(page);
+                assert(page->cache_type == cache_t::eden); // this shouldn't happen
+                m_eden.handle_hit(page);
             }
         }
 
@@ -328,54 +286,52 @@ template<
 
         // Both of the below functions promote to the MRU position.
 
-        void promote_to_protected(page_position page)
+        void promote_to_eden(page_position page)
         {
-            m_protected.transfer_page_from(page, m_probationary);
-            page->cache_type = CacheType::PROTECTED;
+            m_eden.transfer_page_from(page, m_probationary);
+            page->cache_type = cache_t::eden;
         }
-
 
         void demote_to_probationary(page_position page)
         {
-            m_probationary.transfer_page_from(page, m_protected);
-            page->cache_type = CacheType::PROBATIONARY;
+            m_probationary.transfer_page_from(page, m_eden);
+            page->cache_type = cache_t::probationary;
         }
     };
 
+    frequency_sketch<K> m_filter;
 
-    using PageMap = std::map<K, typename LRU::page_position>;
-
-
-    FrequencySketch<K> m_filter;
     // Maps keys to page positions of the LRU caches pointing to a page.
-    PageMap            m_page_map;
-    // Allocated 1% of the total capacity. Window victims are granted to chance to
+    std::map<K, typename lru::page_position> m_page_map;
+
+    // Allocated 1% of the total capacity. Window victims are granted the chance to
     // reenter the cache (into $m_main). This is to remediate the problem where sparse
     // bursts cause repeated misses in the regular TinyLfu architecture.
-    LRU                m_window;
+    lru m_window;
+
     // Allocated 99% of the total capacity.
-    SLRU               m_main;
+    slru m_main;
 
 public:
 
-    explicit WTinyLFUCache(int capacity)
+    explicit wtinylfu_cache(int capacity)
         : m_filter(capacity)
-        , m_window(get_window_capacity(capacity))
+        , m_window(window_capacity(capacity))
         , m_main(capacity - m_window.capacity())
-    {}
-
+    {
+        std::cout << "window capacity: " << m_window.capacity() << '\n';
+        std::cout << "main capacity: " << m_main.capacity() << '\n';
+    }
 
     int size() const noexcept
     {
         return m_window.size() + m_main.size();
     }
 
-
     int capacity() const noexcept
     {
         return m_window.capacity() + m_main.capacity();
     }
-
 
     bool contains(const K& key) const noexcept
     {
@@ -390,11 +346,11 @@ public:
     {
         if(n <= 0)
         {
-            throw std::invalid_argument("cache capacity must be greater than zero!");
+            throw std::invalid_argument("cache capacity must be greater than zero");
         }
 
         m_filter.change_capacity(n);
-        m_window.set_capacity(get_window_capacity(n));
+        m_window.set_capacity(window_capacity(n));
         m_main.set_capacity(n - m_window.capacity());
 
         while(m_window.is_full())
@@ -406,7 +362,6 @@ public:
             evict_from_main();
         }
     }
-
 
     std::shared_ptr<V> get(const K& key)
     {
@@ -421,11 +376,15 @@ public:
         return nullptr;
     }
 
+    std::shared_ptr<V> operator[](const K& key)
+    {
+        return get(key);
+    }
 
     template<typename ValueLoader>
     std::shared_ptr<V> get_and_insert_if_missing(const K& key, ValueLoader value_loader)
     {
-        ValuePtr value = get(key);
+        std::shared_ptr<V> value = get(key);
         if(value == nullptr)
         {
             value = std::make_shared<V>(value_loader(key));
@@ -434,12 +393,10 @@ public:
         return value;
     }
 
-
     void insert(K key, V value)
     {
         insert(std::move(key), std::make_shared<V>(std::move(value)));
     }
-
 
     void erase(const K& key)
     {
@@ -447,7 +404,7 @@ public:
         if(it != m_page_map.end())
         {
             auto& page = it->second;
-            if(page->cache_type == CacheType::WINDOW)
+            if(page->cache_type == cache_t::window)
             {
                 m_window.erase(page);
             }
@@ -461,13 +418,12 @@ public:
 
 private:
 
-    static int get_window_capacity(const int total_capacity) noexcept
+    static int window_capacity(const int total_capacity) noexcept
     {
         return std::max(1, int(std::ceil(0.01f * total_capacity)));
     }
-    
 
-    void insert(const K& key, ValuePtr data)
+    void insert(const K& key, std::shared_ptr<V> data)
     {
         if(m_window.is_full())
         {
@@ -481,14 +437,13 @@ private:
         }
         else
         {
-            m_page_map.emplace(key, m_window.insert(key, CacheType::WINDOW, data));
+            m_page_map.emplace(key, m_window.insert(key, cache_t::window, data));
         }
     }
 
-
-    void handle_hit(typename LRU::page_position page)
+    void handle_hit(typename lru::page_position page)
     {
-        if(page->cache_type == CacheType::WINDOW)
+        if(page->cache_type == cache_t::window)
         {
             m_window.handle_hit(page);
         }
@@ -514,20 +469,18 @@ private:
         }
         else
         {
-            m_main.transfer_page_from(m_window.get_lru_pos(), m_window);
+            m_main.transfer_page_from(m_window.lru_pos(), m_window);
         }
     }
 
-
     void evict_from_window_or_main()
     {
-        const int window_victim_freq = m_filter.get_frequency(m_window.get_victim_key());
-        const int main_victim_freq   = m_filter.get_frequency(m_main.get_victim_key());
-
+        const int window_victim_freq = m_filter.frequency(m_window.victim_key());
+        const int main_victim_freq = m_filter.frequency(m_main.victim_key());
         if(window_victim_freq > main_victim_freq)
         {
             evict_from_main();
-            m_main.transfer_page_from(m_window.get_lru_pos(), m_window);
+            m_main.transfer_page_from(m_window.lru_pos(), m_window);
         }
         else
         {
@@ -535,21 +488,17 @@ private:
         }
     }
 
-
     void evict_from_main()
     {
-        m_page_map.erase(m_main.get_victim_key());
+        m_page_map.erase(m_main.victim_key());
         m_main.evict();
     }
 
-
     void evict_from_window()
     {
-        m_page_map.erase(m_window.get_victim_key());
+        m_page_map.erase(m_window.victim_key());
         m_window.evict();
     }
 };
 
-
 #endif
-

@@ -23,17 +23,16 @@
 
 #include <bitset>
 
-
 namespace detail
 {
     // This is Bob Jenkins' One-at-a-Time hash, see:
     // http://www.burtleburtle.net/bob/hash/doobs.html
     template<typename T>
-    constexpr uint32_t get_hash(const T& t) noexcept
+    constexpr uint32_t hash(const T& t) noexcept
     {
+        constexpr int size = sizeof(T);
         const char* data = reinterpret_cast<const char*>(&t);
-        uint32_t    hash = 0;
-        const int   size = sizeof(T);
+        uint32_t hash = 0;
 
         for(auto i = 0; i < size; ++i)
         {
@@ -49,17 +48,17 @@ namespace detail
         return hash;
     }
 
-    /* Returns the number of set bits in x. Also known as Hamming Weight. */
+    /** Returns the number of set bits in x. Also known as Hamming Weight. */
     template<
         typename T,
         typename std::enable_if<std::is_integral<T>::value, int>::type = 0
-    > constexpr int get_popcount(T x) noexcept
+    > constexpr int popcount(T x) noexcept
     {
         return std::bitset<sizeof(T) * 8>(x).count();
     }
 
     // From: http://graphics.stanford.edu/~seander/bithacks.html
-    constexpr uint32_t get_nearest_power_of_two(uint32_t x) noexcept
+    constexpr uint32_t nearest_power_of_two(uint32_t x) noexcept
     {
         --x;
         x |= x >> 1;
@@ -72,6 +71,4 @@ namespace detail
     }
 } // namespace detail
 
-
 #endif
-

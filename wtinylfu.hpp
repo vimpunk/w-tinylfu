@@ -95,7 +95,6 @@ template<
         using page_position = typename std::list<page>::iterator;
         using const_page_position = typename std::list<page>::const_iterator;
 
-
         explicit lru(int capacity) : m_capacity(capacity) {}
 
         int size() const noexcept { return m_lru.size(); }
@@ -184,8 +183,7 @@ template<
         using page_position = typename lru::page_position;
         using const_page_position = typename lru::const_page_position;
 
-        explicit slru(int capacity)
-            : slru(0.8f * capacity, capacity - 0.8f * capacity)
+        explicit slru(int capacity) : slru(0.8f * capacity, capacity - 0.8f * capacity)
         {
             // correct truncation error
             if(this->capacity() < capacity)
@@ -242,10 +240,14 @@ template<
 
         void erase(page_position page)
         {
-            if(page.cache_type == cache_t::eden)
+            if(page->cache_type == cache_t::eden)
+            {
                 m_eden.erase(page);
+            }
             else
+            {
                 m_probationary.erase(page);
+            }
         }
 
         /** Moves page to the MRU position of the probationary segment. */
@@ -311,6 +313,9 @@ template<
     // Allocated 99% of the total capacity.
     slru m_main;
 
+    int m_num_cache_hits = 0;
+    int m_num_cache_misses = 0;
+
 public:
 
     explicit wtinylfu_cache(int capacity)
@@ -328,6 +333,9 @@ public:
     {
         return m_window.capacity() + m_main.capacity();
     }
+
+    int num_cache_hits() const noexcept { return m_num_cache_hits; }
+    int num_cache_misses() const noexcept { return m_num_cache_misses; }
 
     bool contains(const K& key) const noexcept
     {
@@ -369,6 +377,7 @@ public:
             handle_hit(page);
             return page->data;
         }
+        ++m_num_cache_misses;
         return nullptr;
     }
 
@@ -447,6 +456,7 @@ private:
         {
             m_main.handle_hit(page);
         }
+        ++m_num_cache_hits;
     }
 
     /**

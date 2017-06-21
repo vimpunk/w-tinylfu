@@ -48,7 +48,9 @@ template<typename T> class frequency_sketch
     // sake, the 64 bit blocks are partitioned into four 16 bit sub-blocks, and the four
     // counters corresponding to some T is within a single such sub-block.
     std::vector<uint64_t> m_table;
-    // Incremented with each call to record_access, halved when sampling size is reached.
+
+    // Incremented with each call to record_access, if the frequency of the item could
+    // be incremented, and halved when sampling size is reached.
     int m_size;
 
 public:
@@ -58,19 +60,17 @@ public:
         change_capacity(capacity);
     }
 
-    void change_capacity(const int capacity)
+    void change_capacity(const int n)
     {
-        if(capacity <= 0)
+        if(n <= 0)
         {
-            throw std::invalid_argument(
-                "frequency_sketch capacity must be larger than 0"
-            );
+            throw std::invalid_argument("frequency_sketch capacity must be larger than 0");
         }
-        m_table.resize(detail::nearest_power_of_two(capacity));
+        m_table.resize(detail::nearest_power_of_two(n));
         m_size = 0;
     }
 
-    bool has(const T& t) const noexcept
+    bool contains(const T& t) const noexcept
     {
         return frequency(t) > 0;
     }
@@ -104,13 +104,13 @@ public:
         }
     }
 
-protected:
+private:
 
     int get_count(const uint32_t hash, const int counter_index) const noexcept
     {
-        const int index = table_index(hash, counter_index);
+        const int table_index = this->table_index(hash, counter_index);
         const int offset = counter_offset(hash, counter_index);
-        return (m_table[index] >> offset) & 0xfL;
+        return (m_table[table_index] >> offset) & 0xfL;
     }
 
     /**

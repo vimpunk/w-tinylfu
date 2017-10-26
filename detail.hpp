@@ -30,20 +30,19 @@ namespace detail
     template<typename T>
     constexpr uint32_t hash(const T& t) noexcept
     {
-        constexpr int size = sizeof(T);
         const char* data = reinterpret_cast<const char*>(&t);
         uint32_t hash = 0;
 
-        for(auto i = 0; i < size; ++i)
+        for(auto i = 0; i < int(sizeof t); ++i)
         {
             hash += data[i];
-            hash += (hash << 10);
-            hash ^= (hash >> 6);
+            hash += hash << 10;
+            hash ^= hash >> 6;
         }
 
-        hash += (hash << 3);
-        hash ^= (hash >> 11);
-        hash += (hash << 15);
+        hash += hash << 3;
+        hash ^= hash >> 11;
+        hash += hash << 15;
 
         return hash;
     }

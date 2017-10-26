@@ -91,18 +91,18 @@ template<
 
     class lru
     {
-        std::list<page> m_lru;
-        int m_capacity;
+        std::list<page> lru_;
+        int capacity_;
 
     public:
 
         using page_position = typename std::list<page>::iterator;
         using const_page_position = typename std::list<page>::const_iterator;
 
-        explicit lru(int capacity) : m_capacity(capacity) {}
+        explicit lru(int capacity) : capacity_(capacity) {}
 
-        int size() const noexcept { return m_lru.size(); }
-        int capacity() const noexcept { return m_capacity; }
+        int size() const noexcept { return lru_.size(); }
+        int capacity() const noexcept { return capacity_; }
         bool is_full() const noexcept { return size() >= capacity(); }
 
         /**
@@ -112,15 +112,15 @@ template<
          * entries from the page map outside of this LRU instance, so this is handled
          * externally.
          */
-        void set_capacity(const int n) noexcept { m_capacity = n; }
+        void set_capacity(const int n) noexcept { capacity_ = n; }
 
         /** Returns the position of the hottest (most recently used) page. */
-        page_position mru_pos() noexcept { return m_lru.begin(); }
-        const_page_position mru_pos() const noexcept { return m_lru.begin(); }
+        page_position mru_pos() noexcept { return lru_.begin(); }
+        const_page_position mru_pos() const noexcept { return lru_.begin(); }
 
         /** Returns the position of the coldest (least recently used) page. */
-        page_position lru_pos() noexcept { return --m_lru.end(); }
-        const_page_position lru_pos() const noexcept { return --m_lru.end(); }
+        page_position lru_pos() noexcept { return --lru_.end(); }
+        const_page_position lru_pos() const noexcept { return --lru_.end(); }
 
         const K& victim_key() const noexcept
         {
@@ -134,14 +134,14 @@ template<
 
         void erase(page_position page)
         {
-            m_lru.erase(page);
+            lru_.erase(page);
         }
 
         /** Inserts new page at the MRU position of the cache. */
         template<typename... Args>
         page_position insert(Args&&... args)
         {
-            return m_lru.emplace(mru_pos(), std::forward<Args>(args)...);
+            return lru_.emplace(mru_pos(), std::forward<Args>(args)...);
         }
 
         /** Moves page to the MRU position. */
@@ -153,7 +153,7 @@ template<
         /** Moves page from $source to the MRU position of this cache. */
         void transfer_page_from(page_position page, lru& source)
         {
-            m_lru.splice(mru_pos(), source.m_lru, page);
+            lru_.splice(mru_pos(), source.lru_, page);
         }
     };
 
@@ -179,8 +179,8 @@ template<
      */
     class slru
     {
-        lru m_eden;
-        lru m_probationary;
+        lru eden_;
+        lru probationary_;
 
     public:
 
@@ -192,23 +192,23 @@ template<
             // correct truncation error
             if(this->capacity() < capacity)
             {
-                m_eden.set_capacity(m_eden.capacity() + 1);
+                eden_.set_capacity(eden_.capacity() + 1);
             }
         }
 
         slru(int eden_capacity, int probationary_capacity)
-            : m_eden(eden_capacity)
-            , m_probationary(probationary_capacity)
+            : eden_(eden_capacity)
+            , probationary_(probationary_capacity)
         {}
 
         const int size() const noexcept
         {
-            return m_eden.size() + m_probationary.size();
+            return eden_.size() + probationary_.size();
         }
 
         const int capacity() const noexcept
         {
-            return m_eden.capacity() + m_probationary.capacity();
+            return eden_.capacity() + probationary_.capacity();
         }
 
         const bool is_full() const noexcept
@@ -218,18 +218,18 @@ template<
 
         void set_capacity(const int n)
         {
-            m_eden.set_capacity(0.8f * n);
-            m_probationary.set_capacity(n - m_eden.capacity());
+            eden_.set_capacity(0.8f * n);
+            probationary_.set_capacity(n - eden_.capacity());
         }
 
         page_position victim_pos() noexcept
         {
-            return m_probationary.lru_pos();
+            return probationary_.lru_pos();
         }
 
         const_page_position victim_pos() const noexcept
         {
-            return m_probationary.lru_pos();
+            return probationary_.lru_pos();
         }
 
         const K& victim_key() const noexcept
@@ -239,21 +239,21 @@ template<
 
         void evict()
         {
-            m_probationary.evict();
+            probationary_.evict();
         }
 
         void erase(page_position page)
         {
             if(page->cache_slot == cache_slot::eden)
-                m_eden.erase(page);
+                eden_.erase(page);
             else
-                m_probationary.erase(page);
+                probationary_.erase(page);
         }
 
         /** Moves page to the MRU position of the probationary segment. */
         void transfer_page_from(page_position page, lru& source)
         {
-            m_probationary.transfer_page_from(page, source);
+            probationary_.transfer_page_from(page, source);
             page->cache_slot = cache_slot::probationary;
         }
 
@@ -271,12 +271,12 @@ template<
             if(page->cache_slot == cache_slot::probationary)
             {
                 promote_to_eden(page);
-                if(m_eden.is_full()) { demote_to_probationary(m_eden.lru_pos()); }
+                if(eden_.is_full()) { demote_to_probationary(eden_.lru_pos()); }
             }
             else
             {
                 assert(page->cache_slot == cache_slot::eden); // this shouldn't happen
-                m_eden.handle_hit(page);
+                eden_.handle_hit(page);
             }
         }
 
@@ -284,58 +284,58 @@ template<
 
         void promote_to_eden(page_position page)
         {
-            m_eden.transfer_page_from(page, m_probationary);
+            eden_.transfer_page_from(page, probationary_);
             page->cache_slot = cache_slot::eden;
         }
 
         void demote_to_probationary(page_position page)
         {
-            m_probationary.transfer_page_from(page, m_eden);
+            probationary_.transfer_page_from(page, eden_);
             page->cache_slot = cache_slot::probationary;
         }
     };
 
-    frequency_sketch<K> m_filter;
+    frequency_sketch<K> filter_;
 
     // Maps keys to page positions of the LRU caches pointing to a page.
-    std::map<K, typename lru::page_position> m_page_map;
+    std::map<K, typename lru::page_position> page_map_;
 
     // Allocated 1% of the total capacity. Window victims are granted the chance to
-    // reenter the cache (into $m_main). This is to remediate the problem where sparse
+    // reenter the cache (into $main_). This is to remediate the problem where sparse
     // bursts cause repeated misses in the regular TinyLfu architecture.
-    lru m_window;
+    lru window_;
 
     // Allocated 99% of the total capacity.
-    slru m_main;
+    slru main_;
 
     // Statistics.
-    int m_num_cache_hits = 0;
-    int m_num_cache_misses = 0;
+    int num_cache_hits_ = 0;
+    int num_cache_misses_ = 0;
 
 public:
 
     explicit wtinylfu_cache(int capacity)
-        : m_filter(capacity)
-        , m_window(window_capacity(capacity))
-        , m_main(capacity - m_window.capacity())
+        : filter_(capacity)
+        , window_(window_capacity(capacity))
+        , main_(capacity - window_.capacity())
     {}
 
     int size() const noexcept
     {
-        return m_window.size() + m_main.size();
+        return window_.size() + main_.size();
     }
 
     int capacity() const noexcept
     {
-        return m_window.capacity() + m_main.capacity();
+        return window_.capacity() + main_.capacity();
     }
 
-    int num_cache_hits() const noexcept { return m_num_cache_hits; }
-    int num_cache_misses() const noexcept { return m_num_cache_misses; }
+    int num_cache_hits() const noexcept { return num_cache_hits_; }
+    int num_cache_misses() const noexcept { return num_cache_misses_; }
 
     bool contains(const K& key) const noexcept
     {
-        return m_page_map.find(key) != m_page_map.cend();
+        return page_map_.find(key) != page_map_.cend();
     }
 
     /**
@@ -349,25 +349,25 @@ public:
             throw std::invalid_argument("cache capacity must be greater than zero");
         }
 
-        m_filter.change_capacity(n);
-        m_window.set_capacity(window_capacity(n));
-        m_main.set_capacity(n - m_window.capacity());
+        filter_.change_capacity(n);
+        window_.set_capacity(window_capacity(n));
+        main_.set_capacity(n - window_.capacity());
 
-        while(m_window.is_full()) { evict_from_window(); }
-        while(m_main.is_full()) { evict_from_main(); }
+        while(window_.is_full()) { evict_from_window(); }
+        while(main_.is_full()) { evict_from_main(); }
     }
 
     std::shared_ptr<V> get(const K& key)
     {
-        m_filter.record_access(key);
-        auto it = m_page_map.find(key);
-        if(it != m_page_map.end())
+        filter_.record_access(key);
+        auto it = page_map_.find(key);
+        if(it != page_map_.end())
         {
             auto& page = it->second;
             handle_hit(page);
             return page->data;
         }
-        ++m_num_cache_misses;
+        ++num_cache_misses_;
         return nullptr;
     }
 
@@ -395,15 +395,15 @@ public:
 
     void erase(const K& key)
     {
-        auto it = m_page_map.find(key);
-        if(it != m_page_map.end())
+        auto it = page_map_.find(key);
+        if(it != page_map_.end())
         {
             auto& page = it->second;
             if(page->cache_slot == cache_slot::window)
-                m_window.erase(page);
+                window_.erase(page);
             else
-                m_main.erase(page);
-            m_page_map.erase(it);
+                main_.erase(page);
+            page_map_.erase(it);
         }
     }
 
@@ -416,22 +416,22 @@ private:
 
     void insert(const K& key, std::shared_ptr<V> data)
     {
-        if(m_window.is_full()) { evict(); }
+        if(window_.is_full()) { evict(); }
 
-        auto it = m_page_map.find(key);
-        if(it != m_page_map.end())
+        auto it = page_map_.find(key);
+        if(it != page_map_.end())
             it->second->data = data;
         else
-            m_page_map.emplace(key, m_window.insert(key, cache_slot::window, data));
+            page_map_.emplace(key, window_.insert(key, cache_slot::window, data));
     }
 
     void handle_hit(typename lru::page_position page)
     {
         if(page->cache_slot == cache_slot::window)
-            m_window.handle_hit(page);
+            window_.handle_hit(page);
         else
-            m_main.handle_hit(page);
-        ++m_num_cache_hits;
+            main_.handle_hit(page);
+        ++num_cache_hits_;
     }
 
     /**
@@ -447,17 +447,17 @@ private:
         if(size() >= capacity())
             evict_from_window_or_main();
         else
-            m_main.transfer_page_from(m_window.lru_pos(), m_window);
+            main_.transfer_page_from(window_.lru_pos(), window_);
     }
 
     void evict_from_window_or_main()
     {
-        const int window_victim_freq = m_filter.frequency(m_window.victim_key());
-        const int main_victim_freq = m_filter.frequency(m_main.victim_key());
+        const int window_victim_freq = filter_.frequency(window_.victim_key());
+        const int main_victim_freq = filter_.frequency(main_.victim_key());
         if(window_victim_freq > main_victim_freq)
         {
             evict_from_main();
-            m_main.transfer_page_from(m_window.lru_pos(), m_window);
+            main_.transfer_page_from(window_.lru_pos(), window_);
         }
         else
         {
@@ -467,14 +467,14 @@ private:
 
     void evict_from_main()
     {
-        m_page_map.erase(m_main.victim_key());
-        m_main.evict();
+        page_map_.erase(main_.victim_key());
+        main_.evict();
     }
 
     void evict_from_window()
     {
-        m_page_map.erase(m_window.victim_key());
-        m_window.evict();
+        page_map_.erase(window_.victim_key());
+        window_.evict();
     }
 };
 

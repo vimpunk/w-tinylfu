@@ -47,11 +47,11 @@ template<typename T> class frequency_sketch
     // Holds 64 bit blocks, each of which holds sixteen 4 bit counters. For simplicity's
     // sake, the 64 bit blocks are partitioned into four 16 bit sub-blocks, and the four
     // counters corresponding to some T is within a single such sub-block.
-    std::vector<uint64_t> m_table;
+    std::vector<uint64_t> table_;
 
     // Incremented with each call to record_access, if the frequency of the item could
     // be incremented, and halved when sampling size is reached.
-    int m_size;
+    int size_;
 
 public:
 
@@ -66,8 +66,8 @@ public:
         {
             throw std::invalid_argument("frequency_sketch capacity must be larger than 0");
         }
-        m_table.resize(detail::nearest_power_of_two(n));
-        m_size = 0;
+        table_.resize(detail::nearest_power_of_two(n));
+        size_ = 0;
     }
 
     bool contains(const T& t) const noexcept
@@ -98,7 +98,7 @@ public:
             was_added |= try_increment_counter_at(hash, i);
         }
 
-        if(was_added && (++m_size == sampling_size()))
+        if(was_added && (++size_ == sampling_size()))
         {
             reset();
         }
@@ -110,13 +110,13 @@ private:
     {
         const int table_index = this->table_index(hash, counter_index);
         const int offset = counter_offset(hash, counter_index);
-        return (m_table[table_index] >> offset) & 0xfL;
+        return (table_[table_index] >> offset) & 0xfL;
     }
 
     /**
      * Returns the table index where the counter associated with $hash at
      * $counter_index resides (since each item is mapped to four different counters in
-     * $m_table, an index is necessary to differentiate between each).
+     * $table_, an index is necessary to differentiate between each).
      */
     int table_index(const uint32_t hash, const int counter_index) const noexcept
     {
@@ -128,7 +128,7 @@ private:
         };
         uint64_t h = seeds[counter_index] * hash;
         h += h >> 32;
-        return h & (m_table.size() - 1);
+        return h & (table_.size() - 1);
     }
 
     /**
@@ -141,14 +141,14 @@ private:
         const int offset = counter_offset(hash, counter_index);
         if(can_increment_counter_at(index, offset))
         {
-            m_table[index] += 1L << offset;
+            table_[index] += 1L << offset;
             return true;
         }
         return false;
     }
 
     /**
-     * $m_table holds 64 bit blocks, while counters are 4 bit wide, i.e. there are 16
+     * $table_ holds 64 bit blocks, while counters are 4 bit wide, i.e. there are 16
      * counters in a block.
      * This function determines the start offset of the ${counter_index}th counter
      * associated with $hash.
@@ -160,7 +160,7 @@ private:
     }
 
     /**
-     * $m_table holds 64 bit blocks, and each block is partitioned into four 16 bit
+     * $table_ holds 64 bit blocks, and each block is partitioned into four 16 bit
      * parts, starting at 0, 16, 32 and 48. Each part is further divided into four 4 bit
      * sub-parts (e.g. 0, 4, 8, 12), which are the start offsets of the counters.
      *
@@ -180,29 +180,29 @@ private:
     bool can_increment_counter_at(const int table_index, const int offset) const noexcept
     {
         const uint64_t mask = 0xfL << offset;
-        return (m_table[table_index] & mask) != mask;
+        return (table_[table_index] & mask) != mask;
     }
 
-    /** Halves every counter and adjusts $m_size. */
+    /** Halves every counter and adjusts $size_. */
     void reset() noexcept
     {
-        for(auto& counters : m_table)
+        for(auto& counters : table_)
         {
             // Do a 'bitwise_and' on each (4 bit) counter with 0111 (7) so as to
             // eliminate the bit that got shifted over from the counter to the left to
             // the leftmost position of the current counter.
             counters = (counters >> 1) & 0x7777777777777777L;
         }
-        m_size /= 2;
+        size_ /= 2;
     }
 
     /**
-     * The reset operation is launched when $m_size reaches the value returned by this
+     * The reset operation is launched when $size_ reaches the value returned by this
      * function.
      */
     int sampling_size() const noexcept
     {
-        return m_table.size() * 10;
+        return table_.size() * 10;
     }
 };
 

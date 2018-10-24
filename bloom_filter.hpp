@@ -40,7 +40,6 @@ template<
     int num_hashes_;
 
 public:
-
     explicit bloom_filter(int capacity, double false_positive_error_rate = 0.01)
         : bloom_filter(capacity, false_positive_error_rate,
             best_bitset_size(capacity, false_positive_error_rate),
@@ -86,8 +85,7 @@ public:
         bitset_.clear();
     }
 
-protected:
-
+protected: 
     // From: http://matthias.vallentin.net/blog/2011/06/a-garden-variety-of-bloom-filters/
     static int best_bitset_size(const int capacity, const double error_rate) noexcept
     {

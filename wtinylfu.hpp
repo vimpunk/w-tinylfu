@@ -95,7 +95,6 @@ template<
         int capacity_;
 
     public:
-
         using page_position = typename std::list<page>::iterator;
         using const_page_position = typename std::list<page>::const_iterator;
 
@@ -158,7 +157,7 @@ template<
     };
 
     /**
-     * A cache which is divided into two segments, a probationary and a eden
+     * A cache which is divided into two segments, a probationary and an eden
      * segment. Both are LRU caches.
      *
      * Pages that are cache hits are promoted to the top (MRU position) of the eden
@@ -183,7 +182,6 @@ template<
         lru probationary_;
 
     public:
-
         using page_position = typename lru::page_position;
         using const_page_position = typename lru::const_page_position;
 
@@ -281,7 +279,6 @@ template<
         }
 
     private:
-
         void promote_to_eden(page_position page)
         {
             eden_.transfer_page_from(page, probationary_);
@@ -313,7 +310,6 @@ template<
     int num_cache_misses_ = 0;
 
 public:
-
     explicit wtinylfu_cache(int capacity)
         : filter_(capacity)
         , window_(window_capacity(capacity))
@@ -408,7 +404,6 @@ public:
     }
 
 private:
-
     static int window_capacity(const int total_capacity) noexcept
     {
         return std::max(1, int(std::ceil(0.01f * total_capacity)));

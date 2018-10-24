@@ -42,7 +42,8 @@
  * The white paper:
  * http://dimacs.rutgers.edu/~graham/pubs/papers/cm-full.pdf
  */
-template<typename T> class frequency_sketch
+template<typename T>
+class frequency_sketch
 {
     // Holds 64 bit blocks, each of which holds sixteen 4 bit counters. For simplicity's
     // sake, the 64 bit blocks are partitioned into four 16 bit sub-blocks, and the four
@@ -54,7 +55,6 @@ template<typename T> class frequency_sketch
     int size_;
 
 public:
-
     explicit frequency_sketch(int capacity)
     {
         change_capacity(capacity);
@@ -105,7 +105,6 @@ public:
     }
 
 private:
-
     int get_count(const uint32_t hash, const int counter_index) const noexcept
     {
         const int table_index = this->table_index(hash, counter_index);
